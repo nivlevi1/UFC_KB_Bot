@@ -8,7 +8,7 @@ import s3fs
 
 # configure your S3 filesystem
 S3_BUCKET = 'ufc'
-LOG_PATH   = f'{S3_BUCKET}/logs/ufc_scrape.log'
+LOG_PATH   = f'{S3_BUCKET}/logs/ufc_event_scrape.log'
 STATE_PATH = f'{S3_BUCKET}/logs/ufc_state.json'
 S3_OPTS    = {
     'key': 'minioadmin',
