@@ -9,7 +9,7 @@ import s3fs
 S3_BUCKET         = 'ufc'
 MASTER_EVENTS_CSV = f'{S3_BUCKET}/UFC_Events.csv'
 FIGHTS_CSV        = f'{S3_BUCKET}/UFC_Fights.csv'
-LOG_PATH          = f'{S3_BUCKET}/logs/ufc_fight_scrape.log'
+LOG_PATH          = f'{S3_BUCKET}/logs/ufc_fights_scrape.log'
 S3_OPTS           = {
     'key': 'minioadmin',
     'secret': 'minioadmin',
@@ -44,7 +44,8 @@ def main():
     soup = BeautifulSoup(resp.content, 'html.parser')
     rows = soup.find('tbody')\
                .find_all('tr', class_='b-statistics__table-row')[1:]
-    events = [(r.find('a').text.strip(), r.find('a')['href']) for r in rows if r.find('a')]
+    events = [(r.find('a').text.strip(), r.find('a')['href'])
+              for r in rows if r.find('a')]
 
     # 2) chronological order (oldest→newest)
     events_chrono = list(reversed(events))
@@ -53,31 +54,26 @@ def main():
     # 3) filtering logic:
     if last_master:
         if last_fights:
-            # both exist → if master comes after fights, take the slice between them
             idx_master = names.index(last_master)
             idx_fights = names.index(last_fights)
             if idx_master > idx_fights:
-                # include everything from just after last_fights up through last_master
                 new_events = events_chrono[idx_fights+1 : idx_master+1]
             else:
-                # fights is at or newer than master → nothing to catch up on
                 new_events = []
         else:
-            # no fights file → take all up through master
             idx_master = names.index(last_master)
             new_events = events_chrono[: idx_master+1]
     else:
-        # no master file → grab everything
         new_events = events_chrono[:]
 
     if not new_events:
         print("No new events to scrape.")
         return
 
-    all_data  = []
+    # 4) scrape each new event
+    all_data   = []
     last_fight = None
 
-    # 4) scrape each new event
     for event_name, event_link in new_events:
         print(f"Scraping event: {event_name}")
         ev_r = requests.get(event_link); ev_r.raise_for_status()
@@ -132,20 +128,23 @@ def main():
         storage_options=S3_OPTS
     )
 
-    # 6) log
-    duration_s = time.time() - start_time
-    timestamp  = datetime.utcnow().isoformat() + 'Z'
-    ne_count   = len(new_events)
-    last_evt   = new_events[-1][0]
-    log_line = (
-        f"{timestamp} duration={duration_s:.2f}s "
-        f"new_events={ne_count} last_event={last_evt!r} "
-        f"last_fight={last_fight!r}\n"
-    )
-    with fs.open(LOG_PATH, 'a') as lf:
-        lf.write(log_line)
+    # 6) log (only if we actually scraped something)
+    ne_count = len(new_events)
+    if ne_count > 0:
+        duration_s = time.time() - start_time
+        timestamp  = datetime.utcnow().isoformat() + 'Z'
+        last_evt   = new_events[-1][0]
+        log_line = (
+            f"{timestamp} duration={duration_s:.2f}s "
+            f"new_events={ne_count} last_event={last_evt!r} "
+            f"last_fight={last_fight!r}\n"
+        )
+        with fs.open(LOG_PATH, 'a') as lf:
+            lf.write(log_line)
 
     print(f"Done: {len(all_data)} fights scraped from {ne_count} new events.")
+    if ne_count > 0:
+        print(log_line, end='', flush=True)
 
 if __name__ == '__main__':
     main()

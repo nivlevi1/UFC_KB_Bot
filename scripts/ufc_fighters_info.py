@@ -107,7 +107,7 @@ def main():
     # final summary & logging
     duration  = time.time() - start_time
     timestamp = datetime.utcnow().isoformat() + 'Z'
-    print(f"\n✔ Done: scraped {len(df)} fighters in {duration:.1f}s", flush=True)
+    print(f"\nDone: scraped {len(df)} fighters in {duration:.1f}s", flush=True)
 
     log_line = f"{timestamp}  duration={duration:.2f}\n"
     fs = s3fs.S3FileSystem(**S3_OPTS)
