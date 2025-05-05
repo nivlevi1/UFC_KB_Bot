@@ -7,78 +7,93 @@ import pandas as pd
 import s3fs
 
 # configure your S3 filesystem
-S3_BUCKET = 'ufc'
+S3_BUCKET  = 'ufc'
 LOG_PATH   = f'{S3_BUCKET}/logs/ufc_event_scrape.log'
-STATE_PATH = f'{S3_BUCKET}/logs/ufc_state.json'
-S3_OPTS    = {
+STATE_PATH = f'{S3_BUCKET}/logs/ufc_state.log'
+CSV_PATH   = f'{S3_BUCKET}/UFC_Events.csv'
+
+S3_OPTS = {
     'key': 'minioadmin',
     'secret': 'minioadmin',
     'client_kwargs': {'endpoint_url': 'http://minio-dev:9000'}
 }
 
+def load_last_state(fs):
+    """Load the last_event from state JSON, or return None if missing."""
+    try:
+        with fs.open(STATE_PATH, 'r') as f:
+            state = json.load(f)
+        return state.get('last_event')
+    except FileNotFoundError:
+        return None
+
 def main():
-    # start timer
     start_time = time.time()
+    fs = s3fs.S3FileSystem(**S3_OPTS)
 
-    # scrape
-    url      = 'http://www.ufcstats.com/statistics/events/completed?page=all'
-    resp     = requests.get(url)
+    # 1) load last_event from state
+    last_event = load_last_state(fs)
+
+    # 2) scrape all completed events
+    url  = 'http://www.ufcstats.com/statistics/events/completed?page=all'
+    resp = requests.get(url)
     resp.raise_for_status()
-    soup     = BeautifulSoup(resp.content, 'html.parser')
-    tbody    = soup.find('tbody')
-    rows     = tbody.find_all('tr', class_='b-statistics__table-row')[1:]
-    data     = []
+    soup  = BeautifulSoup(resp.content, 'html.parser')
+    tbody = soup.find('tbody')
+    rows  = tbody.find_all('tr', class_='b-statistics__table-row')[1:]
 
-    for row in rows:
-        # Extract the Event Name and Link
-        event_link_tag = row.find('a', class_='b-link b-link_style_black')
-        event_name = event_link_tag.text.strip() if event_link_tag else None
-        event_link = event_link_tag['href'] if event_link_tag else None
-                
-        # Extract the Date
+    data = []
+    for row in reversed(rows[-20:]):  # oldest → newest
+        link_tag = row.find('a', class_='b-link b-link_style_black')
+        name     = link_tag.text.strip() if link_tag else None
+        link     = link_tag['href']    if link_tag else None
         date_tag = row.find('span', class_='b-statistics__date')
-        event_date = date_tag.text.strip() if date_tag else None
-                
-        # Extract the Location
-        location_tag = row.find('td', class_='b-statistics__table-col b-statistics__table-col_style_big-top-padding')
-        event_location = location_tag.text.strip() if location_tag else None
-                
-        # Append the data as a tuple
-        data.append((event_name, event_date, event_location, event_link))
+        date     = date_tag.text.strip() if date_tag else None
+        loc_tag  = row.find('td', class_='b-statistics__table-col '
+                                        'b-statistics__table-col_style_big-top-padding')
+        loc      = loc_tag.text.strip() if loc_tag else None
+        data.append((name, date, loc, link))
 
-    df = pd.DataFrame(data, columns=['Event Name','Date','Location','Link'])
+    df_all = pd.DataFrame(data, columns=['Event Name','Date','Location','Link'])
 
+    # 3) figure out which rows are new
+    if last_event and last_event in df_all['Event Name'].values:
+        idx = df_all.index[df_all['Event Name'] == last_event][0]
+        df_new = df_all.iloc[idx+1:]
+    else:
+        # no previous run or event not found → import everything
+        df_new = df_all
 
-    # write full dump
-    df.to_csv(
-        f's3://{S3_BUCKET}/UFC_Events.csv',
-        index=False,
-        storage_options=S3_OPTS
-    )
+    # 4) append only if there are new events
+    if not df_new.empty:
+        df_new.to_csv(
+            f's3://{CSV_PATH}',
+            mode='a',
+            header=not fs.exists(CSV_PATH),
+            index=False,
+            storage_options=S3_OPTS
+        )
 
-    # measure and prepare state
+    # 5) log & state
     duration_s = time.time() - start_time
-    last_event = df['Event Name'].iloc[0] if not df.empty else None
-    timestamp  = datetime.utcnow().isoformat() + 'Z'
+    most_recent = df_all['Event Name'].iloc[-1] if not df_all.empty else None
+    timestamp   = datetime.utcnow().isoformat() + 'Z'
 
-    # build our log line
-    log_line = f"{timestamp}  duration={duration_s:.2f}s  last_event={last_event!r}\n"
-    state     = {
+    # append to log
+    log_line = f"{timestamp}  duration={duration_s:.2f}s  new_events={len(df_new)}  last_event={most_recent!r}\n"
+    with fs.open(LOG_PATH, 'a') as f:
+        f.write(log_line)
+
+    # overwrite state
+    state = {
         'last_run':   timestamp,
         'duration_s': duration_s,
-        'last_event': last_event
+        'last_event': most_recent
     }
-
-    # push to S3
-    fs = s3fs.S3FileSystem(**S3_OPTS)
-    # 1) append to log
-    with fs.open(LOG_PATH, mode='a') as f:
-        f.write(log_line)
-    # 2) overwrite state JSON
-    with fs.open(STATE_PATH, mode='w') as f:
+    with fs.open(STATE_PATH, 'w') as f:
         json.dump(state, f)
 
-    print(df)
+    print(f"Found {len(df_new)} new events; last_event is now {most_recent!r}.")
 
 if __name__ == '__main__':
     main()

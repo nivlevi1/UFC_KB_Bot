@@ -1,149 +1,151 @@
+import time
+from datetime import datetime
 from bs4 import BeautifulSoup
 import requests
 import pandas as pd
-import time
-import json
-from datetime import datetime
 import s3fs
 
-#S3 filesystem
-S3_BUCKET = 'ufc'
-LOG_PATH   = f'{S3_BUCKET}/logs/ufc_fight_scrape.log'
-S3_OPTS    = {
+# S3 configuration
+S3_BUCKET         = 'ufc'
+MASTER_EVENTS_CSV = f'{S3_BUCKET}/UFC_Events.csv'
+FIGHTS_CSV        = f'{S3_BUCKET}/UFC_Fights.csv'
+LOG_PATH          = f'{S3_BUCKET}/logs/ufc_fight_scrape.log'
+S3_OPTS           = {
     'key': 'minioadmin',
     'secret': 'minioadmin',
     'client_kwargs': {'endpoint_url': 'http://minio-dev:9000'}
 }
 
+def get_bookmarks(fs):
+    """Return (last_fights_event, last_master_event) or (None, None)."""
+    try:
+        ev_df = pd.read_csv(f's3://{MASTER_EVENTS_CSV}', storage_options=S3_OPTS)
+        last_master = ev_df['Event Name'].iloc[-1]
+    except Exception:
+        last_master = None
+
+    try:
+        fights_df = pd.read_csv(f's3://{FIGHTS_CSV}', storage_options=S3_OPTS)
+        last_fights = fights_df['event_name'].iloc[-1]
+    except Exception:
+        last_fights = None
+
+    return last_fights, last_master
+
 def main():
-    # start timer
     start_time = time.time()
+    fs = s3fs.S3FileSystem(**S3_OPTS)
 
-    # URL of the webpage to scrape
-    url = 'http://www.ufcstats.com/statistics/events/completed?page=all'
-    response = requests.get(url)
+    last_fights, last_master = get_bookmarks(fs)
 
-    # Check if the request was successful
-    if response.status_code == 200:
-        soup = BeautifulSoup(response.content, 'html.parser')
-        tbody = soup.find('tbody')
+    # 1) scrape the full list (newest→oldest)
+    url  = 'http://www.ufcstats.com/statistics/events/completed?page=all'
+    resp = requests.get(url); resp.raise_for_status()
+    soup = BeautifulSoup(resp.content, 'html.parser')
+    rows = soup.find('tbody')\
+               .find_all('tr', class_='b-statistics__table-row')[1:]
+    events = [(r.find('a').text.strip(), r.find('a')['href']) for r in rows if r.find('a')]
 
-        if tbody:
-            # Extract all rows
-            rows = tbody.find_all('tr')
+    # 2) chronological order (oldest→newest)
+    events_chrono = list(reversed(events))
+    names         = [e[0] for e in events_chrono]
 
-            # Get all the event links
-            events = []
-            for row in rows:
-                event_link_tag = row.find('a', href=True)
-                event_link = event_link_tag['href'] if event_link_tag else None
-                event_name = event_link_tag.text.strip() if event_link_tag else None
-                if event_link:
-                    events.append([event_name, event_link])
-            events = events[1:]
-
-            # Initialize the final dataset
-            all_data = []
-
-            # Loop through event links and extract fight details
-            for event in events:
-                fight_id = 0
-                event_name = event[0]
-                resp_event = requests.get(event[1])
-                resp_event.raise_for_status()
-
-                # Parse the HTML content of the event page
-                soup_event = BeautifulSoup(resp_event.content, 'html.parser')
-
-                # Find all fight rows in the table
-                fight_rows = soup_event.find_all('tr', class_='b-fight-details__table-row')[1:]
-
-                # Extract fight details
-                for row in fight_rows:
-                    fight_id += 1
-                    fight_stats_link = row.get('data-link')
-                    fighter_links = row.find_all('a', class_='b-link b-link_style_black')
-                    fighter_1 = fighter_links[0].text.strip() if len(fighter_links) > 0 else None
-                    fighter_2 = fighter_links[1].text.strip() if len(fighter_links) > 1 else None
-                    fight_result = fighter_1 if row.find('i', class_='b-flag__text').text.strip() == 'win' else 'nc'
-
-                    td_elements = row.find_all('td')
-                    weight_class = td_elements[6].text.strip() if len(td_elements) > 6 else None
-                    championship_fight = 1 if 'belt.png' in str(row) else 0
-
-                    method, description = None, None
-                    if len(td_elements) > 7 and td_elements[7]:
-                        method_details = td_elements[7].find_all('p')
-                        method = method_details[0].text.strip() if len(method_details) > 0 else None
-                        description = method_details[1].text.strip() if len(method_details) > 1 else None
-
-                    round_ = td_elements[8].text.strip() if len(td_elements) > 8 else None
-                    time_ = td_elements[9].text.strip() if len(td_elements) > 9 else None
-
-                    fight_of_the_night = 1 if 'fight.png' in str(row) else 0
-                    performance_of_the_night = 1 if 'perf.png' in str(row) else 0
-                    sub_of_the_night = 1 if 'sub.png' in str(row) else 0
-                    ko_of_the_night = 1 if 'ko.png' in str(row) else 0
-
-                    all_data.append((
-                        event_name,
-                        fight_id,
-                        fight_result,
-                        fighter_1,
-                        fighter_2,
-                        weight_class,
-                        method,
-                        description,
-                        round_,
-                        time_,
-                        championship_fight,
-                        fight_of_the_night,
-                        performance_of_the_night,
-                        sub_of_the_night,
-                        ko_of_the_night,
-                        fight_stats_link
-                    ))
-
-            # Create a Pandas DataFrame
-            columns = [
-                'event_name', 'fight_id', 'fight_result', 'fighter_1', 'fighter_2',
-                'weight_class', 'method', 'description', 'round', 'time',
-                'championship_fight', 'fight_of_the_night', 'performance_of_the_night',
-                'sub_of_the_night', 'ko_of_the_night', 'fight_stats_link'
-            ]
-            df = pd.DataFrame(all_data, columns=columns)
-
-            # write full dump to S3
-            df.to_csv(
-                f's3://{S3_BUCKET}/UFC_Fights.csv',
-                index=True,
-                storage_options=S3_OPTS
-            )
-
-            # measure and prepare state
-            duration_s = time.time() - start_time
-            last_event = df['event_name'].iloc[0] if not df.empty else None
-            # capture last fight participants
-            if not df.empty:
-                last_fight = f"{df['fighter_1'].iloc[-1]} vs {df['fighter_2'].iloc[-1]}"
+    # 3) filtering logic:
+    if last_master:
+        if last_fights:
+            # both exist → if master comes after fights, take the slice between them
+            idx_master = names.index(last_master)
+            idx_fights = names.index(last_fights)
+            if idx_master > idx_fights:
+                # include everything from just after last_fights up through last_master
+                new_events = events_chrono[idx_fights+1 : idx_master+1]
             else:
-                last_fight = None
-            timestamp = datetime.utcnow().isoformat() + 'Z'
-
-            # build our log line and state dict
-            log_line = (
-                f"{timestamp}  duration={duration_s:.2f}s  "
-                f"last_event={last_event!r}  last_fight={last_fight!r}\n"
-            )
-            # push to S3
-            fs = s3fs.S3FileSystem(**S3_OPTS)
-            with fs.open(LOG_PATH, mode='a') as log_f:
-                log_f.write(log_line)
-            print(df)
+                # fights is at or newer than master → nothing to catch up on
+                new_events = []
         else:
-            print("<tbody> not found.")
+            # no fights file → take all up through master
+            idx_master = names.index(last_master)
+            new_events = events_chrono[: idx_master+1]
     else:
-        print(f"Failed to retrieve the page. Status code: {response.status_code}")
+        # no master file → grab everything
+        new_events = events_chrono[:]
+
+    if not new_events:
+        print("No new events to scrape.")
+        return
+
+    all_data  = []
+    last_fight = None
+
+    # 4) scrape each new event
+    for event_name, event_link in new_events:
+        print(f"Scraping event: {event_name}")
+        ev_r = requests.get(event_link); ev_r.raise_for_status()
+        fight_rows = BeautifulSoup(ev_r.content, 'html.parser')\
+                         .find_all('tr', class_='b-fight-details__table-row')[1:]
+        fight_id = 0
+
+        for row in fight_rows:
+            fight_id += 1
+            links      = row.find_all('a', class_='b-link')
+            fighter_1  = links[0].text.strip()
+            fighter_2  = links[1].text.strip()
+            result_txt = row.find('i', class_='b-flag__text').text.strip()
+            fight_result = fighter_1 if result_txt == 'win' else 'nc'
+
+            td          = row.find_all('td')
+            weight_cls  = td[6].text.strip()
+            champ       = int('belt.png' in str(row))
+            method_p    = td[7].find_all('p')
+            method      = method_p[0].text.strip()
+            description = method_p[1].text.strip()
+            rnd         = td[8].text.strip()
+            time_       = td[9].text.strip()
+            fotn        = int('fight.png' in str(row))
+            potn        = int('perf.png' in str(row))
+            sotn        = int('sub.png' in str(row))
+            kotn        = int('ko.png' in str(row))
+            link        = row.get('data-link')
+
+            all_data.append((
+                event_name, fight_id, fight_result,
+                fighter_1, fighter_2, weight_cls,
+                method, description, rnd, time_,
+                champ, fotn, potn, sotn, kotn, link
+            ))
+            last_fight = f"{fighter_1} vs {fighter_2}"
+            print(f"Parsed fight {fight_id}")
+
+    # 5) append to UFC_Fights.csv
+    df_new = pd.DataFrame(all_data, columns=[
+        'event_name','fight_id','fight_result','fighter_1','fighter_2',
+        'weight_class','method','description','round','time',
+        'championship_fight','fight_of_the_night',
+        'performance_of_the_night','sub_of_the_night',
+        'ko_of_the_night','fight_stats_link'
+    ])
+    df_new.to_csv(
+        f's3://{FIGHTS_CSV}',
+        mode='a',
+        header=not fs.exists(FIGHTS_CSV),
+        index=False,
+        storage_options=S3_OPTS
+    )
+
+    # 6) log
+    duration_s = time.time() - start_time
+    timestamp  = datetime.utcnow().isoformat() + 'Z'
+    ne_count   = len(new_events)
+    last_evt   = new_events[-1][0]
+    log_line = (
+        f"{timestamp} duration={duration_s:.2f}s "
+        f"new_events={ne_count} last_event={last_evt!r} "
+        f"last_fight={last_fight!r}\n"
+    )
+    with fs.open(LOG_PATH, 'a') as lf:
+        lf.write(log_line)
+
+    print(f"Done: {len(all_data)} fights scraped from {ne_count} new events.")
 
 if __name__ == '__main__':
     main()
