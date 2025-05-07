@@ -8,10 +8,11 @@ import requests
 from bs4 import BeautifulSoup
 import pandas as pd
 import s3fs
-
+import json
 # configure your S3 filesystem
 S3_BUCKET = 'ufc'
 LOG_PATH  = f'{S3_BUCKET}/logs/ufc_fighters_scrape.log'
+STATE_PATH = f'{S3_BUCKET}/logs/ufc_state.log'
 S3_OPTS = {
     'key': 'minioadmin',
     'secret': 'minioadmin',
@@ -98,6 +99,12 @@ def main():
     ])
 
     # write to S3
+    fs = s3fs.S3FileSystem(**S3_OPTS)
+    with fs.open(STATE_PATH, 'r') as f:
+        state = json.load(f)
+    last_run = state.get('last_run')
+    df['last_run'] = last_run
+
     df.to_csv(
         f's3://{S3_BUCKET}/UFC_Fighters.csv',
         index=False,
@@ -110,7 +117,6 @@ def main():
     print(f"\nDone: scraped {len(df)} fighters in {duration:.1f}s", flush=True)
 
     log_line = f"{timestamp}  duration={duration:.2f}\n"
-    fs = s3fs.S3FileSystem(**S3_OPTS)
     with fs.open(LOG_PATH, 'a') as f:
         f.write(log_line)
 

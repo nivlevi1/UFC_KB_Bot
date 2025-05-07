@@ -11,6 +11,7 @@ S3_BUCKET  = 'ufc'
 LOG_PATH   = f'{S3_BUCKET}/logs/ufc_event_scrape.log'
 STATE_PATH = f'{S3_BUCKET}/logs/ufc_state.log'
 CSV_PATH   = f'{S3_BUCKET}/UFC_Events.csv'
+STATE_PATH = f'{S3_BUCKET}/logs/ufc_state.log'
 
 S3_OPTS = {
     'key': 'minioadmin',
@@ -41,7 +42,7 @@ def main():
     rows  = soup.find('tbody').find_all('tr', class_='b-statistics__table-row')[1:]
 
     data = []
-    for row in reversed(rows[-22:]):  # oldest → newest
+    for row in reversed(rows[-30:]):  # oldest → newest
         link_tag = row.find('a', class_='b-link b-link_style_black')
         name     = link_tag.text.strip() if link_tag else None
         link     = link_tag['href']    if link_tag else None
@@ -70,6 +71,7 @@ def main():
 
     # 4) if there *are* new events, append + log
     if not df_new.empty:
+        df_new['last_updated'] = timestamp
         df_new.to_csv(
             f's3://{CSV_PATH}',
             mode='a',
@@ -78,20 +80,22 @@ def main():
             storage_options=S3_OPTS
         )
 
-        log_line = (
-            f"{timestamp}  duration={duration_s:.2f}s  "
-            f"new_events={len(df_new)}  last_event={most_recent!r}\n"
-        )
-        with fs.open(LOG_PATH, 'a') as f:
-            f.write(log_line)
-        print(f"Appended {len(df_new)} new events and logged update.")
+        # 5) overwrite state
+        with fs.open(STATE_PATH, 'w') as f:
+            json.dump(state, f)
+        print(f"State file updated; last_event is now {most_recent!r}.")
     else:
         print("No new events to scrape. (No log entry was written.)")
 
-    # 5) always overwrite state
-    with fs.open(STATE_PATH, 'w') as f:
-        json.dump(state, f)
-    print(f"State file updated; last_event is now {most_recent!r}.")
+    log_line = (
+        f"{timestamp}  duration={duration_s:.2f}s  "
+        f"new_events={len(df_new)}  last_event={most_recent!r}\n"
+    )
+    with fs.open(LOG_PATH, 'a') as f:
+        f.write(log_line)
+        print(f"Appended {len(df_new)} new events and logged update.")
+
+
 
 if __name__ == '__main__':
     main()
