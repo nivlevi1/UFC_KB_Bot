@@ -3,6 +3,7 @@ from datetime import datetime
 from bs4 import BeautifulSoup
 import requests
 import pandas as pd
+import numpy as np
 import s3fs
 import json
 
@@ -137,6 +138,8 @@ def main():
         'performance_of_the_night','sub_of_the_night',
         'ko_of_the_night','fight_stats_link'
     ])
+
+    df_new.replace('---', np.nan, inplace=True)
 
     with fs.open(STATE_PATH, 'r') as f:
         state = json.load(f)

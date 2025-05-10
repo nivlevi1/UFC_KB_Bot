@@ -4,6 +4,7 @@ from datetime import datetime
 from bs4 import BeautifulSoup
 import requests
 import pandas as pd
+import numpy as np
 import s3fs
 
 # configure your S3 filesystem
@@ -42,7 +43,7 @@ def main():
     rows  = soup.find('tbody').find_all('tr', class_='b-statistics__table-row')[1:]
 
     data = []
-    for row in reversed(rows[-30:]):  # oldest → newest
+    for row in reversed(rows):  # oldest → newest
         link_tag = row.find('a', class_='b-link b-link_style_black')
         name     = link_tag.text.strip() if link_tag else None
         link     = link_tag['href']    if link_tag else None
@@ -58,6 +59,8 @@ def main():
         df_new = df_all.iloc[idx+1:]
     else:
         df_new = df_all
+    
+    df_new.replace(['---', '--'], np.nan, inplace=True)
 
     # prepare state values (always)
     duration_s  = time.time() - start_time
@@ -69,9 +72,9 @@ def main():
         'last_event': most_recent
     }
 
-    # 4) if there *are* new events, append + log
+    # 4) if there are new events, append + log
     if not df_new.empty:
-        df_new['last_updated'] = timestamp
+        df_new.loc[:, 'last_updated'] = timestamp
         df_new.to_csv(
             f's3://{CSV_PATH}',
             mode='a',

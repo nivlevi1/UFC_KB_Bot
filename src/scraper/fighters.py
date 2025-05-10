@@ -3,7 +3,7 @@
 import time
 import string
 from datetime import datetime
-
+import numpy as np
 import requests
 from bs4 import BeautifulSoup
 import pandas as pd
@@ -97,6 +97,9 @@ def main():
     df = pd.DataFrame(data, columns=[
         'First','Last','Nickname','Ht.','Wt.','Reach','Stance','W','L','D','Belt','Link'
     ])
+
+    df.replace('---', np.nan, inplace=True)
+
 
     # write to S3
     fs = s3fs.S3FileSystem(**S3_OPTS)

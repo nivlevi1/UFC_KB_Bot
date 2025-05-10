@@ -1,12 +1,13 @@
 from bs4 import BeautifulSoup
 import requests
 import pandas as pd
+import numpy as np
 import time
 from datetime import datetime
 import s3fs
 import json
 from concurrent.futures import ThreadPoolExecutor
-from ufc_fights_stats_functions import (
+from stats_functions import (
     parse_overall_totals,
     parse_significant_strikes_overall,
     parse_totals_by_round,
@@ -152,8 +153,14 @@ def main():
     with fs.open(STATE_PATH, 'r') as f:
         state = json.load(f)
     last_run = state.get('last_run')
+
+    #Last run update
     df_Fight_stats['last_run'] = last_run
     df_Round_stats['last_run'] = last_run
+
+    #Handling nulls
+    df_Fight_stats.replace(['---', '--'], np.nan, inplace=True)
+    df_Round_stats.replace(['---', '--'], np.nan, inplace=True)
 
 
     # append to CSVs
@@ -175,12 +182,12 @@ def main():
     # --- final log with the newly scraped last_event/fighter ---
     duration_s   = time.time() - start_time
     last_event   = new_events[-1][0]
-    last_fighter = df_Fight_stats['Fighter'].iloc[-1] if not df_Fight_stats.empty else None
+    last_fight = df_Fight_stats['Fight_Id'].iloc[-1] if not df_Fight_stats.empty else None
     timestamp    = datetime.utcnow().isoformat() + 'Z'
     log_line     = (
         f"{timestamp} duration={duration_s:.2f}s "
         f"new_events={len(new_events)} last_event={last_event!r} "
-        f"last_fighter={last_fighter!r}\n"
+        f"last_fight_id={last_fight!r}\n"
     )
     with fs.open(LOG_PATH, 'a') as log_f:
         log_f.write(log_line)
