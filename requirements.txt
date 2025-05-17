@@ -1,0 +1,6 @@
+# requirements.txt
+beautifulsoup4
+requests
+pandas
+s3fs
+pyspark

@@ -7,7 +7,7 @@ from datetime import datetime
 import s3fs
 import json
 from concurrent.futures import ThreadPoolExecutor
-from stats_functions import (
+from .stats_functions import (
     parse_overall_totals,
     parse_significant_strikes_overall,
     parse_totals_by_round,
