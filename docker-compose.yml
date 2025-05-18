@@ -11,6 +11,8 @@ services:
       - "9002:9001"
     volumes:
       - minio_data:/data
+    networks:
+      - etl_net
 
   minio-init:
     image: minio/mc
@@ -22,23 +24,29 @@ services:
       mc config host add myminio http://minio-dev:9000 minioadmin minioadmin &&
       mc mb myminio/ufc || echo 'Bucket already exists'
       "
-  
+    networks:
+      - etl_net
+
   postgres_db:
-      container_name: postgres_db
-      image: postgres:12
-      environment:
-          - POSTGRES_USER=postgres
-          - POSTGRES_PASSWORD=postgres
-          - POSTGRES_DB=ufc_db
-          - POSTGRES_PORT=5432
-      ports:
-          - "5432:5432"
-      depends_on:
-        - minio-dev
-    
+    container_name: postgres_db
+    image: postgres:12
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=ufc_db
+      - POSTGRES_PORT=5432
+    ports:
+      - "5432:5432"
+    depends_on:
+      - minio-dev
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - etl_net
 
   app:
     build: .
+    image: ufc_app:latest
     volumes:
       - .:/app
     working_dir: /app
@@ -47,6 +55,100 @@ services:
     tty: true
     depends_on:
       - minio-dev
+      - postgres_db
+    networks:
+      - etl_net
+
+  airflow-init:
+      image: apache/airflow:2.7.0
+      container_name: airflow_init
+      environment:
+        AIRFLOW__CORE__EXECUTOR: LocalExecutor
+        AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://postgres:postgres@postgres_db:5432/ufc_db
+        AIRFLOW__CORE__FERNET_KEY: FB0o_zt4e3Ziq3LdUUO7F2Z95cvFFx16hU8jTeR1ASM=
+        AIRFLOW__CORE__LOAD_EXAMPLES: 'False'
+        AIRFLOW__LOGGING__LOGGING_LEVEL: INFO
+      volumes:
+        - ./dags:/opt/airflow/dags
+        - ./airflow-data/logs:/opt/airflow/logs
+      depends_on:
+        - postgres_db
+      entrypoint: /bin/bash
+      command:
+        - -c
+        - |
+          # 1. Upgrade the metadata DB to the latest migration.
+          airflow db upgrade
+
+          # 2. If no users exist, create the default Admin.
+          if ! airflow users list --output table | grep -q 'username'; then
+            airflow users create \
+              --role Admin \
+              --username airflow \
+              --password airflow \
+              --email airflow@airflow.com \
+              --firstname airflow \
+              --lastname airflow
+          fi
+      restart: on-failure
+
+      networks:
+        - etl_net
+
+    # ───────────────────── Airflow webserver ─────────────────────
+  airflow-webserver:
+    image: apache/airflow:2.7.0
+    container_name: airflow_webserver
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://postgres:postgres@postgres_db:5432/ufc_db
+      AIRFLOW__CORE__FERNET_KEY: FB0o_zt4e3Ziq3LdUUO7F2Z95cvFFx16hU8jTeR1ASM=
+      AIRFLOW__CORE__LOAD_EXAMPLES: 'False'
+      AIRFLOW__LOGGING__LOGGING_LEVEL: INFO
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./airflow-data/logs:/opt/airflow/logs
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      - postgres_db
+      - airflow-init
+    command: airflow webserver
+    ports:
+      - "8082:8080"
+    restart: always
+
+    networks:
+      - etl_net
+
+  # ───────────────────── Airflow scheduler ─────────────────────
+  airflow-scheduler:
+    image: apache/airflow:2.7.0
+    container_name: airflow_scheduler
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://postgres:postgres@postgres_db:5432/ufc_db
+      AIRFLOW__CORE__FERNET_KEY: FB0o_zt4e3Ziq3LdUUO7F2Z95cvFFx16hU8jTeR1ASM=
+      AIRFLOW__CORE__LOAD_EXAMPLES: 'False'
+      AIRFLOW__LOGGING__LOGGING_LEVEL: INFO
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./airflow-data/logs:/opt/airflow/logs
+      - /var/run/docker.sock:/var/run/docker.sock
+
+    depends_on:
+      - postgres_db
+      - airflow-init
+    command: airflow scheduler
+    restart: always
+    networks:
+      - etl_net
+
 
 volumes:
   minio_data:
+  postgres_data:
+
+networks:
+  etl_net:
+    driver: bridge
+    name: etl_net
