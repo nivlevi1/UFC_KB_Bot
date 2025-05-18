@@ -13,8 +13,7 @@ ENV JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64
 WORKDIR /app
 
 # Install the required Python packages
-COPY requirements.txt requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install pandas s3fs requests beautifulsoup4 pyspark
 
 # Copy the project files into the container
 COPY . .
