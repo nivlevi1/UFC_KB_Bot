@@ -28,6 +28,8 @@ services:
     networks:
       - etl_net
 
+  # ───────────────────── PostgreSQL ─────────────────────
+
   postgres_db:
     container_name: postgres_db
     image: postgres:12
@@ -42,8 +44,12 @@ services:
       - minio-dev
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./src/bot/init_user_actions_table.sql:/docker-entrypoint-initdb.d/init_user_actions.sql
+
     networks:
       - etl_net
+
+  # ───────────────────── Python ─────────────────────
 
   app:
     build: .
@@ -59,6 +65,8 @@ services:
       - postgres_db
     networks:
       - etl_net
+
+  # ───────────────────── Airflow ─────────────────────
 
   airflow-init:
       image: apache/airflow:2.7.0
@@ -96,7 +104,6 @@ services:
       networks:
         - etl_net
 
-    # ───────────────────── Airflow webserver ─────────────────────
   airflow-webserver:
     image: apache/airflow:2.7.0
     container_name: airflow_webserver
@@ -121,7 +128,6 @@ services:
     networks:
       - etl_net
 
-  # ───────────────────── Airflow scheduler ─────────────────────
   airflow-scheduler:
     image: apache/airflow:2.7.0
     container_name: airflow_scheduler
@@ -141,6 +147,43 @@ services:
       - airflow-init
     command: airflow scheduler
     restart: always
+    networks:
+      - etl_net
+
+
+  # ───────────────────── Kafka ─────────────────────
+
+  zookeeper:
+    container_name: kafka_zookeeper
+    image: wurstmeister/zookeeper:latest
+    ports:
+      - "2181:2181"
+    networks:
+      - etl_net
+
+  kafka:
+    container_name: kafka
+    image: wurstmeister/kafka:2.13-2.8.1
+    environment:
+        KAFKA_ADVERTISED_HOST_NAME: kafka
+        KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+        KAFKA_CREATE_TOPICS: "ufc:1:1"
+    ports:
+        - "9092:9092"
+    depends_on:
+      - zookeeper
+    networks:
+      - etl_net
+
+  kafdrop:
+    container_name: kafka_kafdrop
+    image: obsidiandynamics/kafdrop:3.30.0
+    ports:
+        - "9003:9000"
+    environment:
+        - KAFKA_BROKERCONNECT=kafka:9092
+    depends_on:
+        - kafka
     networks:
       - etl_net
 
