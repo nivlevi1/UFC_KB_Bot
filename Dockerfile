@@ -2,9 +2,13 @@
 FROM python:3.8-slim-buster
 
 # Install headless Java and procps (for the "ps" command)
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends openjdk-11-jdk-headless procps && \
-    rm -rf /var/lib/apt/lists/*
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      openjdk-11-jdk-headless \
+      procps \
+      build-essential \
+      libpq-dev \
+ && rm -rf /var/lib/apt/lists/*
 
 # Set the JAVA_HOME environment variable
 ENV JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64
@@ -20,6 +24,10 @@ RUN pip install \
       beautifulsoup4 \
       pyspark \
       python-telegram-bot==13.7 \
-      kafka-python
+      kafka-python \
+      psycopg2 \
+      openai
+
+      
 # Copy the project files into the container
 COPY . .

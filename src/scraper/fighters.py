@@ -9,6 +9,7 @@ from bs4 import BeautifulSoup
 import pandas as pd
 import s3fs
 import json
+
 # configure your S3 filesystem
 S3_BUCKET = 'ufc'
 LOG_PATH  = f'{S3_BUCKET}/logs/ufc_fighters_scrape.log'
@@ -55,51 +56,49 @@ def main():
             if len(cols) < 11:
                 continue
 
-            # extract and clean fields
-            first    = cols[0].get_text(strip=True)
-            last     = cols[1].get_text(strip=True)
+            first_name = cols[0].get_text(strip=True)
+            last_name = cols[1].get_text(strip=True)
             nickname = cols[2].get_text(strip=True)
 
             raw_ht = cols[3].get_text(strip=True)
-            ht     = raw_ht[:-1] if raw_ht.endswith('"') else raw_ht
+            height = raw_ht[:-1] if raw_ht.endswith('"') else raw_ht
 
-            wt      = cols[4].get_text(strip=True)
+            weight = cols[4].get_text(strip=True)
 
             raw_reach = cols[5].get_text(strip=True).rstrip('"')
-            reach     = raw_reach if raw_reach and raw_reach != '--' else None
+            reach = raw_reach if raw_reach and raw_reach != '--' else None
 
-            stance   = cols[6].get_text(strip=True)
-            wins     = cols[7].get_text(strip=True)
-            losses   = cols[8].get_text(strip=True)
-            draws    = cols[9].get_text(strip=True)
-            belt     = 'Yes' if cols[10].find('img') else ''
-            link     = cols[0].find('a')['href']
+            stance = cols[6].get_text(strip=True)
+            wins = cols[7].get_text(strip=True)
+            losses = cols[8].get_text(strip=True)
+            draws = cols[9].get_text(strip=True)
+            belt = 'Yes' if cols[10].find('img') else ''
+            link = cols[0].find('a')['href']
 
             data.append({
-                'First':    first,
-                'Last':     last,
-                'Nickname': nickname,
-                'Height':      ht,
-                'Weight':      wt,
-                'Reach':    reach,
-                'Stance':   stance,
-                'W':        wins,
-                'L':        losses,
-                'D':        draws,
-                'Belt':     belt,
-                'Link':     link
+                'first_name': first_name,
+                'last_name': last_name,
+                'nickname': nickname,
+                'height': height,
+                'weight': weight,
+                'reach': reach,
+                'stance': stance,
+                'wins': wins,
+                'losses': losses,
+                'draws': draws,
+                'belt': belt,
+                'link': link
             })
 
         added = len(data) - before
         print(f"[{char}] appended {added} fighters (total so far: {len(data)})", flush=True)
 
-    # build DataFrame
+    # build DataFrame with consistent column names
     df = pd.DataFrame(data, columns=[
-        'First','Last','Nickname','Ht.','Wt.','Reach','Stance','W','L','D','Belt','Link'
+        'first_name', 'last_name', 'nickname', 'height', 'weight',
+        'reach', 'stance', 'wins', 'losses', 'draws', 'belt', 'link'
     ])
-
-    df.replace('---', np.nan, inplace=True)
-
+    df.replace(['--', '---'], np.nan, inplace=True)
 
     # write to S3
     fs = s3fs.S3FileSystem(**S3_OPTS)
@@ -115,7 +114,7 @@ def main():
     )
 
     # final summary & logging
-    duration  = time.time() - start_time
+    duration = time.time() - start_time
     timestamp = datetime.utcnow().isoformat() + 'Z'
     print(f"\nDone: scraped {len(df)} fighters in {duration:.1f}s", flush=True)
 

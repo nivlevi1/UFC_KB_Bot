@@ -35,7 +35,7 @@ def get_bookmarks(fs):
     # master events CSV → last master
     try:
         ev_df = pd.read_csv(f's3://{MASTER_EVENTS_CSV}', storage_options=S3_OPTS)
-        prev_last_master_event = ev_df['Event Name'].iloc[-1]
+        prev_last_master_event = ev_df['event_name'].iloc[-1]
     except Exception:
         pass
 

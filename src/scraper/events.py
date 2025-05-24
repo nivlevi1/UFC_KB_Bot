@@ -43,7 +43,7 @@ def main():
     rows  = soup.find('tbody').find_all('tr', class_='b-statistics__table-row')[1:]
 
     data = []
-    for row in reversed(rows[-50:]):  # oldest → newest
+    for row in reversed(rows):  # oldest → newest
         link_tag = row.find('a', class_='b-link b-link_style_black')
         name     = link_tag.text.strip() if link_tag else None
         link     = link_tag['href']    if link_tag else None
@@ -51,11 +51,11 @@ def main():
         loc      = row.find('td', class_='b-statistics__table-col b-statistics__table-col_style_big-top-padding').text.strip()
         data.append((name, date, loc, link))
 
-    df_all = pd.DataFrame(data, columns=['Event Name','Date','Location','Link'])
+    df_all = pd.DataFrame(data, columns=['event_name','date','location','link'])
 
     # 3) figure out which rows are new
-    if last_event and last_event in df_all['Event Name'].values:
-        idx    = df_all.index[df_all['Event Name'] == last_event][0]
+    if last_event and last_event in df_all['event_name'].values:
+        idx    = df_all.index[df_all['event_name'] == last_event][0]
         df_new = df_all.iloc[idx+1:]
     else:
         df_new = df_all
@@ -64,7 +64,7 @@ def main():
 
     # prepare state values (always)
     duration_s  = time.time() - start_time
-    most_recent = df_all['Event Name'].iloc[-1] if not df_all.empty else None
+    most_recent = df_all['event_name'].iloc[-1] if not df_all.empty else None
     timestamp   = datetime.utcnow().isoformat() + 'Z'
     state = {
         'last_run':   timestamp,

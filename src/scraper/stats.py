@@ -53,8 +53,8 @@ def main():
     # --- load what we scraped last time ---
     try:
         df_stats        = pd.read_csv(f's3://{STATS_CSV}', storage_options=S3_OPTS)
-        prev_last_event = df_stats['Event'].iloc[-1]
-        prev_last_fighter = df_stats['Fighter'].iloc[-1]
+        prev_last_event = df_stats['event'].iloc[-1]
+        prev_last_fighter = df_stats['fighter'].iloc[-1]
     except Exception:
         prev_last_event   = None
         prev_last_fighter = None
@@ -136,20 +136,70 @@ def main():
                     list_sig_by_round    += sr
 
     # build DataFrames
-    names_tot     = ["Event","Fight_Id","Fighter","KD","Sig. Str","Sig. Str %","Total Str","Td","Td %","Sub. att","Rev.","Ctrl"]
-    names_sig     = ["Event","Fight_Id","Fighter","Sig. Head","Sig. Body","Sig. Leg","Sig. Distance","Sig. Clinch","Sig. Ground"]
-    names_tot_rnd = ["Event","Fight_Id","Round","Fighter","KD","Sig. Str","Sig. Str %","Total Str","Td","Td %","Sub. att","Rev.","Ctrl"]
-    names_sig_rnd = ["Event","Fight_Id","Round","Fighter","Sig. Head","Sig. Body","Sig. Leg","Sig. Distance","Sig. Clinch","Sig. Ground"]
+    names_tot = [
+        "event",
+        "fight_id",
+        "fighter",
+        "knockdowns",
+        "significant_strikes",
+        "significant_strike_accuracy_pct",
+        "total_strikes",
+        "takedowns",
+        "takedown_accuracy_pct",
+        "submission_attempts",
+        "reversals",
+        "control_time",
+    ]
 
+    names_sig = [
+        "event",
+        "fight_id",
+        "fighter",
+        "significant_head_strikes",
+        "significant_body_strikes",
+        "significant_leg_strikes",
+        "distance_strikes",
+        "clinch_strikes",
+        "ground_strikes",
+    ]
+
+    names_tot_rnd = [
+        "event",
+        "fight_id",
+        "round",
+        "fighter",
+        "knockdowns",
+        "significant_strikes",
+        "significant_strike_accuracy_pct",
+        "total_strikes",
+        "takedowns",
+        "takedown_accuracy_pct",
+        "submission_attempts",
+        "reversals",
+        "control_time",
+    ]
+
+    names_sig_rnd = [
+        "event",
+        "fight_id",
+        "round",
+        "fighter",
+        "significant_head_strikes",
+        "significant_body_strikes",
+        "significant_leg_strikes",
+        "distance_strikes",
+        "clinch_strikes",
+        "ground_strikes",
+    ]
     df_tot  = pd.DataFrame(list_totals_only,     columns=names_tot)
     df_sig  = pd.DataFrame(list_sig_only,        columns=names_sig)
     df_tr   = pd.DataFrame(list_totals_by_round, columns=names_tot_rnd)
     df_sigr = pd.DataFrame(list_sig_by_round,    columns=names_sig_rnd)
 
     df_Fight_stats = pd.merge(df_tot, df_sig,
-                              on=["Event","Fight_Id","Fighter"], how='left')
+                            on=["event","fight_id","fighter"], how='left')
     df_Round_stats = pd.merge(df_tr, df_sigr,
-                              on=["Event","Fight_Id","Round","Fighter"], how='left')
+                            on=["event","fight_id","round","fighter"], how='left')
     with fs.open(STATE_PATH, 'r') as f:
         state = json.load(f)
     last_run = state.get('last_run')
@@ -182,7 +232,7 @@ def main():
     # --- final log with the newly scraped last_event/fighter ---
     duration_s   = time.time() - start_time
     last_event   = new_events[-1][0]
-    last_fight = df_Fight_stats['Fight_Id'].iloc[-1] if not df_Fight_stats.empty else None
+    last_fight = df_Fight_stats['fight_id'].iloc[-1] if not df_Fight_stats.empty else None
     timestamp    = datetime.utcnow().isoformat() + 'Z'
     log_line     = (
         f"{timestamp} duration={duration_s:.2f}s "

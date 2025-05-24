@@ -32,6 +32,8 @@ def ufc_streaming():
         .format("kafka") \
         .option("kafka.bootstrap.servers", kafka_bootstrap) \
         .option("subscribe", kafka_topic) \
+        .option("startingOffsets", "earliest") \
+        .option("failOnDataLoss", "false") \
         .load() \
         .select(F.col("value").cast(T.StringType()))
 
@@ -71,7 +73,7 @@ def ufc_streaming():
             .option("password", os.getenv("POSTGRES_PASSWORD", "postgres")) \
             .save()
 
-    # Start the streaming query with foreachBatch
+    # Start the streaming query
     query = parsed_df.writeStream \
         .foreachBatch(write_to_postgres) \
         .outputMode("append") \
