@@ -63,6 +63,8 @@ services:
     depends_on:
       - minio-dev
       - postgres_db
+      - airflow-scheduler
+      - kafka
     networks:
       - etl_net
 
@@ -187,6 +189,24 @@ services:
     networks:
       - etl_net
 
+  # ───────────────────── Bot ─────────────────────
+  ufc_bot:
+    build: .
+    image: ufc_bot:latest
+    volumes:
+      - ./src/bot:/app
+      - ./entrypoint.sh:/app/entrypoint.sh
+    working_dir: /app
+    entrypoint: ["./entrypoint.sh"]
+    stdin_open: true
+    tty: true
+    depends_on:
+      - minio-dev
+      - postgres_db
+      - airflow-scheduler
+      - kafka
+    networks:
+      - etl_net
 
 volumes:
   minio_data:

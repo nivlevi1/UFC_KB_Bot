@@ -43,7 +43,7 @@ def main():
     rows  = soup.find('tbody').find_all('tr', class_='b-statistics__table-row')[1:]
 
     data = []
-    for row in reversed(rows):  # oldest → newest
+    for row in reversed(rows[-50:]):  # oldest → newest
         link_tag = row.find('a', class_='b-link b-link_style_black')
         name     = link_tag.text.strip() if link_tag else None
         link     = link_tag['href']    if link_tag else None

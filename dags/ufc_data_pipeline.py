@@ -85,4 +85,11 @@ with DAG(
         **common_kwargs
     )
 
-    run_events >> run_fighters >> run_fights >> run_stats >> run_s3_to_postgres
+    run_bot_send_update = DockerOperator(
+        task_id='run_bot_send_update',
+        command='python src/bot/bot_send_update.py',
+        environment={**minio_env, **pg_env},
+        **common_kwargs
+    )
+
+    run_events >> run_fighters >> run_fights >> run_stats >> run_s3_to_postgres >> run_bot_send_update
