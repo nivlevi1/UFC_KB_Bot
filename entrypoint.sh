@@ -1,9 +1,12 @@
 #!/usr/bin/env sh
 set -e
 
-# start both bots in the background
 python bot_main.py &
-python bot_consumer.py &
+MAIN_PID=$!
 
-# wait for either to exit
-wait
+python bot_consumer.py &
+CONSUMER_PID=$!
+
+# Wait for both to exit
+wait $MAIN_PID
+wait $CONSUMER_PID

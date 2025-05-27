@@ -26,7 +26,8 @@ RUN pip install \
       python-telegram-bot==13.7 \
       kafka-python \
       psycopg2 \
-      openai
+      openai \
+      python-dotenv
 
       
 # Copy the project files into the container

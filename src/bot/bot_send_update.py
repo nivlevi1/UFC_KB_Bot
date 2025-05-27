@@ -1,8 +1,11 @@
 import datetime
 import psycopg2
 import logging
+import os
 import s3fs
 from telegram import Bot
+from dotenv import load_dotenv
+load_dotenv()
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -20,7 +23,7 @@ S3_OPTS = {
 fs = s3fs.S3FileSystem(**S3_OPTS)
 
 # Telegram Bot Setup
-TELEGRAM_BOT_TOKEN = "7981064950:AAGNJIoxIwDhzAYN6eiXhZnitXH4K8m4iC4"
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 bot = Bot(token=TELEGRAM_BOT_TOKEN)
 
 # Connect to PostgreSQL

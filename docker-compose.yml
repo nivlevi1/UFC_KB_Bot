@@ -205,6 +205,8 @@ services:
       - postgres_db
       - airflow-scheduler
       - kafka
+    env_file:
+      - .env
     networks:
       - etl_net
 
